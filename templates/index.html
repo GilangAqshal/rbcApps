@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deteksi dan Hitung Sel Darah Merah</title>
+<style>
+  :root {
+    --bg: #faf7f6; --card: #ffffff; --ink: #2a2023; --muted: #6f6266;
+    --accent: #b3263e; --accent-dark: #8c1c30; --line: #eadfe1; --ok: #1f7a4d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--ink); line-height: 1.5; }
+  header { background: var(--accent); color: #fff; padding: 28px 20px; }
+  header h1 { margin: 0 auto; max-width: 1000px; font-size: 1.5rem; }
+  header p { margin: 6px auto 0; max-width: 1000px; opacity: .9; font-size: .95rem; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 20px 60px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 20px; margin-bottom: 20px; }
+  h2 { margin: 0 0 14px; font-size: 1.15rem; }
+  label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
+  input[type=file], input[type=number], select { width: 100%; padding: 8px 10px;
+          border: 1px solid var(--line); border-radius: 8px; font: inherit; background: #fff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+  .check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .9rem; }
+  .check input { width: 18px; height: 18px; }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+           padding: 11px 22px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:hover { background: var(--accent-dark); }
+  details { margin: 14px 0; }
+  summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  .error { background: #fdecee; border: 1px solid #f3b8c0; color: #8c1c30;
+           padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat { background: var(--bg); border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 1.7rem; color: var(--accent); }
+  .stat span { font-size: .82rem; color: var(--muted); }
+  .stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  figure { margin: 0; }
+  figure img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
+  figcaption { margin-top: 6px; font-size: .88rem; color: var(--muted); }
+  figcaption strong { color: var(--ink); display: block; }
+  .final img { max-height: 560px; object-fit: contain; background: #000; }
+  .good { color: var(--ok); }
+  figure img { cursor: zoom-in; transition: box-shadow .15s; }
+  figure img:hover { box-shadow: 0 2px 12px rgba(0,0,0,.25); }
+  #lb { position: fixed; inset: 0; background: rgba(20,12,14,.92); display: none; z-index: 50;
+        flex-direction: column; }
+  #lb.open { display: flex; }
+  #lb-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #fff; flex-wrap: wrap; }
+  #lb-title { flex: 1; font-weight: 600; min-width: 140px; }
+  #lb-bar button { background: rgba(255,255,255,.15); padding: 7px 13px; }
+  #lb-bar button:hover { background: rgba(255,255,255,.3); }
+  #lb-zoom { min-width: 52px; text-align: center; font-size: .9rem; }
+  #lb-stage { flex: 1; overflow: hidden; position: relative; cursor: grab; touch-action: none; }
+  #lb-stage.drag { cursor: grabbing; }
+  #lb-img { position: absolute; top: 0; left: 0; transform-origin: 0 0; max-width: none;
+            user-select: none; -webkit-user-drag: none; image-rendering: auto; }
+  #lb-hint { color: #d9c9cc; font-size: .8rem; text-align: center; padding: 6px; }
+  footer { text-align: center; color: var(--muted); font-size: .85rem; padding: 20px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Deteksi dan Penghitungan Sel Darah Merah</h1>
+  <p>Citra mikroskopis apusan darah &middot; Thresholding Otsu &amp; Operasi Morfologi</p>
+</header>
+
+<main>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+  <form class="card" method="post" enctype="multipart/form-data">
+    <h2>Upload citra</h2>
+    <div class="grid">
+      <div>
+        <label for="image">File citra (JPG / PNG)</label>
+        <input id="image" type="file" name="image" accept="image/*" required>
+      </div>
+      <div>
+        <label for="truth">Jumlah RBC sebenarnya (opsional)</label>
+        <input id="truth" type="number" name="truth" min="0" placeholder="dari anotasi dataset">
+      </div>
+    </div>
+
+    <details>
+      <summary>Pengaturan parameter</summary>
+      <div class="grid" style="margin-top:12px">
+        <div>
+          <label for="channel">Citra grayscale dari</label>
+          <select id="channel" name="channel">
+            <option value="green" {% if form.channel == 'green' %}selected{% endif %}>Channel hijau</option>
+            <option value="gray" {% if form.channel == 'gray' %}selected{% endif %}>Grayscale standar</option>
+          </select>
+        </div>
+        <div>
+          <label for="blur_ksize">Kernel Gaussian blur</label>
+          <input id="blur_ksize" type="number" name="blur_ksize" min="1" max="21" step="2" value="{{ form.blur_ksize }}">
+        </div>
+        <div>
+          <label for="morph_ksize">Kernel morfologi</label>
+          <input id="morph_ksize" type="number" name="morph_ksize" min="1" max="21" step="2" value="{{ form.morph_ksize }}">
+        </div>
+        <div>
+          <label for="min_area">Luas minimum sel (px)</label>
+          <input id="min_area" type="number" name="min_area" min="10" max="5000" value="{{ form.min_area }}">
+        </div>
+        <div>
+          <label for="dist_ratio">Rasio distance transform</label>
+          <input id="dist_ratio" type="number" name="dist_ratio" min="0.1" max="0.9" step="0.05" value="{{ form.dist_ratio }}">
+        </div>
+        <div>
+          <label for="wbc_sat">Saturasi min. inti WBC</label>
+          <input id="wbc_sat" type="number" name="wbc_sat" min="10" max="200" value="{{ form.wbc_sat }}">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;justify-content:center">
+          <label class="check"><input type="checkbox" name="use_clahe" {% if form.use_clahe %}checked{% endif %}> Pakai CLAHE</label>
+          <label class="check"><input type="checkbox" name="use_watershed" {% if form.use_watershed %}checked{% endif %}> Pisahkan sel menempel (watershed)</label>
+          <label class="check"><input type="checkbox" name="remove_wbc" {% if form.remove_wbc %}checked{% endif %}> Keluarkan WBC (berdasarkan warna)</label>
+        </div>
+      </div>
+    </details>
+
+    <button type="submit">Proses citra</button>
+  </form>
+
+  {% if result %}
+  <section class="card">
+    <h2>Hasil: {{ filename }}</h2>
+    <div class="stats">
+      <div class="stat"><b>{{ result.count }}</b><span>Sel darah merah terdeteksi</span></div>
+      <div class="stat"><b>{{ '%.0f'|format(result.otsu_threshold) }}</b><span>Ambang Otsu</span></div>
+      <div class="stat"><b>{{ '%.0f'|format(result.median_area) }}</b><span>Median luas sel (px)</span></div>
+      <div class="stat"><b>{{ result.wbc_count }}</b><span>Sel darah putih (tidak dihitung)</span></div>
+      <div class="stat"><b>{{ result.ignored_small }}</b><span>Objek kecil diabaikan</span></div>
+      <div class="stat"><b>{{ result.ignored_big }}</b><span>Objek besar diabaikan</span></div>
+      {% if result.truth is defined %}
+      <div class="stat"><b>{{ result.truth }}</b><span>Jumlah sebenarnya</span></div>
+      <div class="stat"><b>{{ '%+d'|format(result.diff) }}</b><span>Selisih</span></div>
+      {% if result.accuracy is not none %}
+      <div class="stat"><b class="good">{{ '%.1f'|format(result.accuracy) }}%</b><span>Akurasi hitungan</span></div>
+      {% endif %}
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Tahapan pengolahan citra</h2>
+    <div class="stages">
+      {% for s in result.stages %}
+      <figure class="{% if loop.last %}final{% endif %}" {% if loop.last %}style="grid-column: 1 / -1"{% endif %}>
+        <img src="{{ s.uri }}" alt="{{ s.title }}">
+        <figcaption><strong>{{ s.title }}</strong>{{ s.desc }}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</main>
+
+<div id="lb" role="dialog" aria-modal="true" aria-label="Pratinjau gambar">
+  <div id="lb-bar">
+    <span id="lb-title"></span>
+    <button type="button" id="lb-out" aria-label="Perkecil">&minus;</button>
+    <span id="lb-zoom">100%</span>
+    <button type="button" id="lb-in" aria-label="Perbesar">+</button>
+    <button type="button" id="lb-fit">Pas layar</button>
+    <button type="button" id="lb-100">100%</button>
+    <button type="button" id="lb-close" aria-label="Tutup">Tutup &#10005;</button>
+  </div>
+  <div id="lb-stage"><img id="lb-img" alt=""></div>
+  <div id="lb-hint">Scroll / pinch untuk zoom &middot; seret untuk menggeser &middot; klik dua kali untuk zoom &middot; Esc untuk menutup</div>
+</div>
+
+<script>
+(function () {
+  var lb = document.getElementById('lb'), stage = document.getElementById('lb-stage'),
+      img = document.getElementById('lb-img'), title = document.getElementById('lb-title'),
+      zoomLbl = document.getElementById('lb-zoom');
+  var s = 1, tx = 0, ty = 0, fitS = 1, MIN = 0.1, MAX = 12;
+
+  function apply() {
+    img.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+    zoomLbl.textContent = Math.round(s * 100) + '%';
+  }
+  function fit() {
+    var w = img.naturalWidth || 1, h = img.naturalHeight || 1;
+    var sw = stage.clientWidth, sh = stage.clientHeight;
+    fitS = Math.min(sw / w, sh / h);
+    s = fitS; tx = (sw - w * s) / 2; ty = (sh - h * s) / 2; apply();
+  }
+  function zoomAt(f, cx, cy) {
+    var ns = Math.max(MIN, Math.min(MAX, s * f));
+    f = ns / s;
+    tx = cx - (cx - tx) * f; ty = cy - (cy - ty) * f; s = ns; apply();
+  }
+  function center() { return [stage.clientWidth / 2, stage.clientHeight / 2]; }
+
+  function open(src, text) {
+    title.textContent = text || '';
+    img.onload = fit;
+    img.src = src;
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    if (img.complete) fit();
+  }
+  function close() {
+    lb.classList.remove('open');
+    document.body.style.overflow = '';
+    img.removeAttribute('src');
+  }
+
+  document.querySelectorAll('figure img').forEach(function (el) {
+    el.addEventListener('click', function () {
+      var cap = el.closest('figure').querySelector('strong');
+      open(el.src, cap ? cap.textContent : el.alt);
+    });
+  });
+
+  document.getElementById('lb-close').onclick = close;
+  document.getElementById('lb-in').onclick = function () { var c = center(); zoomAt(1.4, c[0], c[1]); };
+  document.getElementById('lb-out').onclick = function () { var c = center(); zoomAt(1 / 1.4, c[0], c[1]); };
+  document.getElementById('lb-fit').onclick = fit;
+  document.getElementById('lb-100').onclick = function () {
+    var c = center(); zoomAt(1 / s, c[0], c[1]);
+  };
+  document.addEventListener('keydown', function (e) {
+    if (!lb.classList.contains('open')) return;
+    if (e.key === 'Escape') close();
+    else if (e.key === '+' || e.key === '=') document.getElementById('lb-in').click();
+    else if (e.key === '-') document.getElementById('lb-out').click();
+    else if (e.key === '0') fit();
+  });
+  stage.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var r = stage.getBoundingClientRect();
+    zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  stage.addEventListener('dblclick', function (e) {
+    var r = stage.getBoundingClientRect();
+    if (s > fitS * 1.05) fit(); else zoomAt(2.5, e.clientX - r.left, e.clientY - r.top);
+  });
+  stage.addEventListener('click', function (e) { if (e.target === stage) close(); });
+
+  /* geser (mouse/touch) + pinch zoom lewat Pointer Events */
+  var pts = {}, lastDist = 0, lastX = 0, lastY = 0;
+  stage.addEventListener('pointerdown', function (e) {
+    stage.setPointerCapture(e.pointerId); pts[e.pointerId] = e;
+    stage.classList.add('drag'); lastX = e.clientX; lastY = e.clientY;
+  });
+  stage.addEventListener('pointermove', function (e) {
+    if (!pts[e.pointerId]) return;
+    pts[e.pointerId] = e;
+    var ids = Object.keys(pts);
+    if (ids.length === 2) {
+      var a = pts[ids[0]], b = pts[ids[1]];
+      var d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (lastDist) {
+        var r = stage.getBoundingClientRect();
+        zoomAt(d / lastDist, (a.clientX + b.clientX) / 2 - r.left, (a.clientY + b.clientY) / 2 - r.top);
+      }
+      lastDist = d;
+    } else {
+      tx += e.clientX - lastX; ty += e.clientY - lastY; apply();
+    }
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  function up(e) { delete pts[e.pointerId]; lastDist = 0; stage.classList.remove('drag'); }
+  stage.addEventListener('pointerup', up);
+  stage.addEventListener('pointercancel', up);
+  window.addEventListener('resize', function () { if (lb.classList.contains('open')) fit(); });
+})();
+</script>
+
+<footer>Tugas Pengolahan Citra &middot; Dataset: BCCD (Blood Cell Count and Detection)</footer>
+</body>
+</html>
