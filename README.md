@@ -1,43 +1,36 @@
-# Deteksi dan Penghitungan Sel Darah Merah (RBC)
+# RBC LAB — Deteksi dan Penghitungan Sel Darah Merah
 
-Aplikasi web pengolahan citra: Thresholding Otsu + Operasi Morfologi (+ watershed untuk sel menempel).
-Dataset: BCCD (Blood Cell Count and Detection), https://www.kaggle.com/datasets/orvile/bccd-blood-cell-count-and-detection-dataset
+Aplikasi Flask untuk analisis citra mikroskopis RBC menggunakan pipeline Otsu, morfologi, dan watershed.
 
-## Menjalankan
+## Menjalankan aplikasi
 
 ```bash
+git clone "link gua"
+cd rbcApps
 pip install -r requirements.txt
 python app.py
 ```
 
-Buka http://localhost:5000, upload citra dari folder gambar BCCD (JPG), lalu klik **Proses citra**.
-Isi kolom "Jumlah RBC sebenarnya" (hitung dari file anotasi) untuk melihat selisih dan akurasi.
+Buka `http://localhost:5000`.
 
-## Struktur
+## Fitur
 
-- `rbc.py`  : pipeline pengolahan citra (bisa dipakai tanpa web)
-- `app.py`  : aplikasi Flask
-- `evaluate.py` : evaluasi otomatis terhadap anotasi BCCD (hasil: tabel + evaluasi.csv)
-- `templates/index.html` : tampilan web
+- Upload beberapa gambar JPG/JPEG/PNG sekaligus (maksimal 30 gambar, total upload 80 MB).
+- Ringkasan analisis dan tabel hasil untuk setiap gambar.
+- Pipeline pengolahan citra ditampilkan secara lengkap dari atas ke bawah.
+- Tampilan tab: Original, Preprocessing, Otsu Binary, Morfologi, dan Deteksi Final.
+- Unduh tabel hasil batch dalam format CSV.
+- Unduh masing-masing gambar tahapan.
+- Parameter preprocessing dan segmentasi dapat disesuaikan.
+- Kolom jumlah RBC sebenarnya tidak ditampilkan pada form utama.
 
-## Tahapan pengolahan citra
+## Catatan
 
-1. Citra asli
-2. Grayscale (channel hijau atau grayscale standar)
-3. Smoothing: Gaussian blur
-4. Peningkatan kontras: CLAHE
-5. Thresholding Otsu (inverse)
-6. Morfologi: opening, closing, hole filling
-6b. Deteksi dan penghapusan WBC berdasarkan warna (HSV: hue biru-ungu, saturasi tinggi)
-7. Pemisahan sel menempel: distance transform, puncak lokal, watershed
-8. Connected component, filter luas, penghitungan dan anotasi kontur
+Jumlah RBC merupakan estimasi dari algoritma segmentasi citra, bukan hasil diagnosis medis. Kualitas pewarnaan, pencahayaan, fokus, dan parameter dapat memengaruhi hasil. Periksa hasil deteksi secara visual sebelum digunakan untuk analisis lanjutan.
 
-## Pengujian pada dataset (untuk laporan)
+## Struktur proyek
 
-```bash
-git clone https://github.com/Shenggan/BCCD_Dataset.git
-python evaluate.py --root BCCD_Dataset/BCCD --n 15
-```
-
-Ambil minimal 10 citra BCCD, jalankan satu per satu, catat jumlah RBC hasil program
-dan jumlah anotasi (file XML di dataset), lalu hitung selisih / MAE / akurasi.
+- `app.py`: aplikasi Flask, upload multi-gambar, dan ekspor CSV.
+- `rbc.py`: pipeline pengolahan citra inti.
+- `evaluate.py`: evaluasi dataset BCCD.
+- `templates/index.html`: antarmuka pengguna.
