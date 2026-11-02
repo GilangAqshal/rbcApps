@@ -1,277 +1,1651 @@
 <!doctype html>
 <html lang="id">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Deteksi dan Hitung Sel Darah Merah</title>
-<style>
-  :root {
-    --bg: #faf7f6; --card: #ffffff; --ink: #2a2023; --muted: #6f6266;
-    --accent: #b3263e; --accent-dark: #8c1c30; --line: #eadfe1; --ok: #1f7a4d;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-         background: var(--bg); color: var(--ink); line-height: 1.5; }
-  header { background: var(--accent); color: #fff; padding: 28px 20px; }
-  header h1 { margin: 0 auto; max-width: 1000px; font-size: 1.5rem; }
-  header p { margin: 6px auto 0; max-width: 1000px; opacity: .9; font-size: .95rem; }
-  main { max-width: 1000px; margin: 0 auto; padding: 24px 20px 60px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-          padding: 20px; margin-bottom: 20px; }
-  h2 { margin: 0 0 14px; font-size: 1.15rem; }
-  label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 4px; }
-  input[type=file], input[type=number], select { width: 100%; padding: 8px 10px;
-          border: 1px solid var(--line); border-radius: 8px; font: inherit; background: #fff; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
-  .check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .9rem; }
-  .check input { width: 18px; height: 18px; }
-  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px;
-           padding: 11px 22px; font: inherit; font-weight: 600; cursor: pointer; }
-  button:hover { background: var(--accent-dark); }
-  details { margin: 14px 0; }
-  summary { cursor: pointer; font-weight: 600; color: var(--accent); }
-  .error { background: #fdecee; border: 1px solid #f3b8c0; color: #8c1c30;
-           padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-  .stat { background: var(--bg); border-radius: 10px; padding: 12px 14px; }
-  .stat b { display: block; font-size: 1.7rem; color: var(--accent); }
-  .stat span { font-size: .82rem; color: var(--muted); }
-  .stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-  figure { margin: 0; }
-  figure img { width: 100%; border-radius: 8px; border: 1px solid var(--line); display: block; }
-  figcaption { margin-top: 6px; font-size: .88rem; color: var(--muted); }
-  figcaption strong { color: var(--ink); display: block; }
-  .final img { max-height: 560px; object-fit: contain; background: #000; }
-  .good { color: var(--ok); }
-  figure img { cursor: zoom-in; transition: box-shadow .15s; }
-  figure img:hover { box-shadow: 0 2px 12px rgba(0,0,0,.25); }
-  #lb { position: fixed; inset: 0; background: rgba(20,12,14,.92); display: none; z-index: 50;
-        flex-direction: column; }
-  #lb.open { display: flex; }
-  #lb-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: #fff; flex-wrap: wrap; }
-  #lb-title { flex: 1; font-weight: 600; min-width: 140px; }
-  #lb-bar button { background: rgba(255,255,255,.15); padding: 7px 13px; }
-  #lb-bar button:hover { background: rgba(255,255,255,.3); }
-  #lb-zoom { min-width: 52px; text-align: center; font-size: .9rem; }
-  #lb-stage { flex: 1; overflow: hidden; position: relative; cursor: grab; touch-action: none; }
-  #lb-stage.drag { cursor: grabbing; }
-  #lb-img { position: absolute; top: 0; left: 0; transform-origin: 0 0; max-width: none;
-            user-select: none; -webkit-user-drag: none; image-rendering: auto; }
-  #lb-hint { color: #d9c9cc; font-size: .8rem; text-align: center; padding: 6px; }
-  footer { text-align: center; color: var(--muted); font-size: .85rem; padding: 20px; }
-</style>
-</head>
-<body>
-<header>
-  <h1>Deteksi dan Penghitungan Sel Darah Merah</h1>
-  <p>Citra mikroskopis apusan darah &middot; Thresholding Otsu &amp; Operasi Morfologi</p>
-</header>
-
-<main>
-  {% if error %}<div class="error">{{ error }}</div>{% endif %}
-
-  <form class="card" method="post" enctype="multipart/form-data">
-    <h2>Upload citra</h2>
-    <div class="grid">
-      <div>
-        <label for="image">File citra (JPG / PNG)</label>
-        <input id="image" type="file" name="image" accept="image/*" required>
-      </div>
-      <div>
-        <label for="truth">Jumlah RBC sebenarnya (opsional)</label>
-        <input id="truth" type="number" name="truth" min="0" placeholder="dari anotasi dataset">
-      </div>
-    </div>
-
-    <details>
-      <summary>Pengaturan parameter</summary>
-      <div class="grid" style="margin-top:12px">
-        <div>
-          <label for="channel">Citra grayscale dari</label>
-          <select id="channel" name="channel">
-            <option value="green" {% if form.channel == 'green' %}selected{% endif %}>Channel hijau</option>
-            <option value="gray" {% if form.channel == 'gray' %}selected{% endif %}>Grayscale standar</option>
-          </select>
-        </div>
-        <div>
-          <label for="blur_ksize">Kernel Gaussian blur</label>
-          <input id="blur_ksize" type="number" name="blur_ksize" min="1" max="21" step="2" value="{{ form.blur_ksize }}">
-        </div>
-        <div>
-          <label for="morph_ksize">Kernel morfologi</label>
-          <input id="morph_ksize" type="number" name="morph_ksize" min="1" max="21" step="2" value="{{ form.morph_ksize }}">
-        </div>
-        <div>
-          <label for="min_area">Luas minimum sel (px)</label>
-          <input id="min_area" type="number" name="min_area" min="10" max="5000" value="{{ form.min_area }}">
-        </div>
-        <div>
-          <label for="dist_ratio">Rasio distance transform</label>
-          <input id="dist_ratio" type="number" name="dist_ratio" min="0.1" max="0.9" step="0.05" value="{{ form.dist_ratio }}">
-        </div>
-        <div>
-          <label for="wbc_sat">Saturasi min. inti WBC</label>
-          <input id="wbc_sat" type="number" name="wbc_sat" min="10" max="200" value="{{ form.wbc_sat }}">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px;justify-content:center">
-          <label class="check"><input type="checkbox" name="use_clahe" {% if form.use_clahe %}checked{% endif %}> Pakai CLAHE</label>
-          <label class="check"><input type="checkbox" name="use_watershed" {% if form.use_watershed %}checked{% endif %}> Pisahkan sel menempel (watershed)</label>
-          <label class="check"><input type="checkbox" name="remove_wbc" {% if form.remove_wbc %}checked{% endif %}> Keluarkan WBC (berdasarkan warna)</label>
-        </div>
-      </div>
-    </details>
-
-    <button type="submit">Proses citra</button>
-  </form>
-
-  {% if result %}
-  <section class="card">
-    <h2>Hasil: {{ filename }}</h2>
-    <div class="stats">
-      <div class="stat"><b>{{ result.count }}</b><span>Sel darah merah terdeteksi</span></div>
-      <div class="stat"><b>{{ '%.0f'|format(result.otsu_threshold) }}</b><span>Ambang Otsu</span></div>
-      <div class="stat"><b>{{ '%.0f'|format(result.median_area) }}</b><span>Median luas sel (px)</span></div>
-      <div class="stat"><b>{{ result.wbc_count }}</b><span>Sel darah putih (tidak dihitung)</span></div>
-      <div class="stat"><b>{{ result.ignored_small }}</b><span>Objek kecil diabaikan</span></div>
-      <div class="stat"><b>{{ result.ignored_big }}</b><span>Objek besar diabaikan</span></div>
-      {% if result.truth is defined %}
-      <div class="stat"><b>{{ result.truth }}</b><span>Jumlah sebenarnya</span></div>
-      <div class="stat"><b>{{ '%+d'|format(result.diff) }}</b><span>Selisih</span></div>
-      {% if result.accuracy is not none %}
-      <div class="stat"><b class="good">{{ '%.1f'|format(result.accuracy) }}%</b><span>Akurasi hitungan</span></div>
-      {% endif %}
-      {% endif %}
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Tahapan pengolahan citra</h2>
-    <div class="stages">
-      {% for s in result.stages %}
-      <figure class="{% if loop.last %}final{% endif %}" {% if loop.last %}style="grid-column: 1 / -1"{% endif %}>
-        <img src="{{ s.uri }}" alt="{{ s.title }}">
-        <figcaption><strong>{{ s.title }}</strong>{{ s.desc }}</figcaption>
-      </figure>
-      {% endfor %}
-    </div>
-  </section>
-  {% endif %}
-</main>
-
-<div id="lb" role="dialog" aria-modal="true" aria-label="Pratinjau gambar">
-  <div id="lb-bar">
-    <span id="lb-title"></span>
-    <button type="button" id="lb-out" aria-label="Perkecil">&minus;</button>
-    <span id="lb-zoom">100%</span>
-    <button type="button" id="lb-in" aria-label="Perbesar">+</button>
-    <button type="button" id="lb-fit">Pas layar</button>
-    <button type="button" id="lb-100">100%</button>
-    <button type="button" id="lb-close" aria-label="Tutup">Tutup &#10005;</button>
-  </div>
-  <div id="lb-stage"><img id="lb-img" alt=""></div>
-  <div id="lb-hint">Scroll / pinch untuk zoom &middot; seret untuk menggeser &middot; klik dua kali untuk zoom &middot; Esc untuk menutup</div>
-</div>
-
-<script>
-(function () {
-  var lb = document.getElementById('lb'), stage = document.getElementById('lb-stage'),
-      img = document.getElementById('lb-img'), title = document.getElementById('lb-title'),
-      zoomLbl = document.getElementById('lb-zoom');
-  var s = 1, tx = 0, ty = 0, fitS = 1, MIN = 0.1, MAX = 12;
-
-  function apply() {
-    img.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
-    zoomLbl.textContent = Math.round(s * 100) + '%';
-  }
-  function fit() {
-    var w = img.naturalWidth || 1, h = img.naturalHeight || 1;
-    var sw = stage.clientWidth, sh = stage.clientHeight;
-    fitS = Math.min(sw / w, sh / h);
-    s = fitS; tx = (sw - w * s) / 2; ty = (sh - h * s) / 2; apply();
-  }
-  function zoomAt(f, cx, cy) {
-    var ns = Math.max(MIN, Math.min(MAX, s * f));
-    f = ns / s;
-    tx = cx - (cx - tx) * f; ty = cy - (cy - ty) * f; s = ns; apply();
-  }
-  function center() { return [stage.clientWidth / 2, stage.clientHeight / 2]; }
-
-  function open(src, text) {
-    title.textContent = text || '';
-    img.onload = fit;
-    img.src = src;
-    lb.classList.add('open');
-    document.body.style.overflow = 'hidden';
-    if (img.complete) fit();
-  }
-  function close() {
-    lb.classList.remove('open');
-    document.body.style.overflow = '';
-    img.removeAttribute('src');
-  }
-
-  document.querySelectorAll('figure img').forEach(function (el) {
-    el.addEventListener('click', function () {
-      var cap = el.closest('figure').querySelector('strong');
-      open(el.src, cap ? cap.textContent : el.alt);
-    });
-  });
-
-  document.getElementById('lb-close').onclick = close;
-  document.getElementById('lb-in').onclick = function () { var c = center(); zoomAt(1.4, c[0], c[1]); };
-  document.getElementById('lb-out').onclick = function () { var c = center(); zoomAt(1 / 1.4, c[0], c[1]); };
-  document.getElementById('lb-fit').onclick = fit;
-  document.getElementById('lb-100').onclick = function () {
-    var c = center(); zoomAt(1 / s, c[0], c[1]);
-  };
-  document.addEventListener('keydown', function (e) {
-    if (!lb.classList.contains('open')) return;
-    if (e.key === 'Escape') close();
-    else if (e.key === '+' || e.key === '=') document.getElementById('lb-in').click();
-    else if (e.key === '-') document.getElementById('lb-out').click();
-    else if (e.key === '0') fit();
-  });
-  stage.addEventListener('wheel', function (e) {
-    e.preventDefault();
-    var r = stage.getBoundingClientRect();
-    zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
-  }, { passive: false });
-  stage.addEventListener('dblclick', function (e) {
-    var r = stage.getBoundingClientRect();
-    if (s > fitS * 1.05) fit(); else zoomAt(2.5, e.clientX - r.left, e.clientY - r.top);
-  });
-  stage.addEventListener('click', function (e) { if (e.target === stage) close(); });
-
-  /* geser (mouse/touch) + pinch zoom lewat Pointer Events */
-  var pts = {}, lastDist = 0, lastX = 0, lastY = 0;
-  stage.addEventListener('pointerdown', function (e) {
-    stage.setPointerCapture(e.pointerId); pts[e.pointerId] = e;
-    stage.classList.add('drag'); lastX = e.clientX; lastY = e.clientY;
-  });
-  stage.addEventListener('pointermove', function (e) {
-    if (!pts[e.pointerId]) return;
-    pts[e.pointerId] = e;
-    var ids = Object.keys(pts);
-    if (ids.length === 2) {
-      var a = pts[ids[0]], b = pts[ids[1]];
-      var d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      if (lastDist) {
-        var r = stage.getBoundingClientRect();
-        zoomAt(d / lastDist, (a.clientX + b.clientX) / 2 - r.left, (a.clientY + b.clientY) / 2 - r.top);
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RBC Lab | Analisis Citra Mikroskopis</title>
+    <style>
+      :root {
+        --ink: #172033;
+        --muted: #68738a;
+        --line: #e5eaf1;
+        --bg: #f4f7fb;
+        --card: #fff;
+        --red: #b4233d;
+        --red2: #8e1830;
+        --soft: #fff0f2;
+        --navy: #111b30;
+        --green: #16845b;
       }
-      lastDist = d;
-    } else {
-      tx += e.clientX - lastX; ty += e.clientY - lastY; apply();
-    }
-    lastX = e.clientX; lastY = e.clientY;
-  });
-  function up(e) { delete pts[e.pointerId]; lastDist = 0; stage.classList.remove('drag'); }
-  stage.addEventListener('pointerup', up);
-  stage.addEventListener('pointercancel', up);
-  window.addEventListener('resize', function () { if (lb.classList.contains('open')) fit(); });
-})();
-</script>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      .hero {
+        background:
+          radial-gradient(circle at 85% 15%, #773044 0, transparent 28%),
+          linear-gradient(120deg, #111b30, #301a2b 70%, #7d2339);
+        color: #fff;
+        padding: 34px 22px 46px;
+      }
+      .hero-inner,
+      main {
+        max-width: 1180px;
+        margin: auto;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .logo {
+        width: 42px;
+        height: 42px;
+        border-radius: 13px;
+        background: #ffffff1c;
+        display: grid;
+        place-items: center;
+        font-size: 23px;
+      }
+      .eyebrow {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #f3bdc8;
+        font-weight: 800;
+      }
+      .hero h1 {
+        font-size: clamp(26px, 4vw, 39px);
+        line-height: 1.12;
+        margin: 22px 0 9px;
+        letter-spacing: -0.035em;
+      }
+      .hero p {
+        color: #e6dce1;
+        max-width: 650px;
+        margin: 0;
+      }
+      main {
+        padding: 26px 20px 64px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 8px 28px #1b29400a;
+      }
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+      .section-head h2 {
+        font-size: 19px;
+        margin: 0 0 3px;
+        letter-spacing: -0.02em;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0;
+      }
+      .upload {
+        border: 1.5px dashed #d5a2ad;
+        background: #fff9fa;
+        border-radius: 15px;
+        padding: 25px;
+        text-align: center;
+        transition: 0.2s;
+      }
+      .upload:hover {
+        border-color: var(--red);
+        background: #fff4f6;
+      }
+      .upload input {
+        max-width: 100%;
+        margin: 12px auto 0;
+        display: block;
+      }
+      .upload strong {
+        display: block;
+        font-size: 16px;
+      }
+      .upload small {
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        font-weight: 750;
+        color: #39445a;
+        margin-bottom: 6px;
+      }
+      input[type="number"],
+      select {
+        width: 100%;
+        padding: 10px 11px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+      }
+      .checks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-top: 18px;
+      }
+      .check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #47536a;
+        font-weight: 650;
+      }
+      .check input {
+        accent-color: var(--red);
+        width: 16px;
+        height: 16px;
+      }
+      details {
+        border-top: 1px solid var(--line);
+        margin-top: 20px;
+        padding-top: 15px;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--red);
+        font-weight: 750;
+        font-size: 13px;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+      .btn {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        gap: 8px;
+        padding: 11px 17px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        text-decoration: none;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+      .primary {
+        background: var(--red);
+        color: #fff;
+      }
+      .primary:hover {
+        background: var(--red2);
+      }
+      .secondary {
+        background: #fff;
+        color: #354057;
+        border-color: var(--line);
+      }
+      .secondary:hover {
+        background: #f7f8fb;
+      }
+      .error {
+        background: #fff0f1;
+        color: #9b1c32;
+        padding: 13px 16px;
+        border-radius: 12px;
+        border: 1px solid #f5c6cd;
+        margin-bottom: 18px;
+      }
+      .result-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .result-top h2 {
+        margin: 0;
+        font-size: 21px;
+      }
+      .timestamp {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+      .stat {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        background: linear-gradient(145deg, #fff, #fafbfe);
+      }
+      .stat b {
+        display: block;
+        font-size: 27px;
+        line-height: 1.2;
+        color: var(--red);
+        letter-spacing: -0.04em;
+      }
+      .stat span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 5px;
+      }
+      .table-wrap {
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 700px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px 13px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+      th {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: #68738a;
+        background: #f8f9fc;
+      }
+      td strong {
+        color: #172033;
+      }
+      .count-pill {
+        display: inline-block;
+        padding: 4px 9px;
+        border-radius: 20px;
+        background: var(--soft);
+        color: var(--red);
+        font-weight: 800;
+      }
+      .stage-section {
+        margin-top: 25px;
+      }
+      .stage-section h3 {
+        font-size: 16px;
+        margin: 0;
+      }
+      .stage-section > p {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 3px 0 14px;
+      }
+      .stage-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+        gap: 15px;
+      }
+      .stage {
+        border: 1px solid var(--line);
+        border-radius: 13px;
+        padding: 12px;
+        background: #fff;
+        min-width: 0;
+      }
+      .stage figure {
+        margin: 0;
+      }
+      .stage img {
+        display: block;
+        width: 100%;
+        height: auto;
+        max-height: 330px;
+        object-fit: contain;
+        background: #f1f3f7;
+        border-radius: 9px;
+        cursor: zoom-in;
+      }
+      .stage figcaption {
+        font-size: 12px;
+        color: var(--muted);
+        padding: 9px 2px 3px;
+      }
+      .stage figcaption b {
+        display: block;
+        color: #263149;
+        margin-bottom: 3px;
+        font-size: 13px;
+      }
+      .stage-tools {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 8px;
+      }
+      .stage-tools a {
+        font-size: 11px;
+        color: var(--red);
+        text-decoration: none;
+        font-weight: 750;
+      }
+      .tabs {
+        display: flex;
+        gap: 7px;
+        overflow: auto;
+        padding: 5px 2px 12px;
+        margin: 12px 0 10px;
+      }
+      .tab {
+        white-space: nowrap;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: #566176;
+        padding: 9px 13px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+      .tab.active {
+        background: var(--navy);
+        border-color: var(--navy);
+        color: #fff;
+      }
+      .tab-panel {
+        display: none;
+      }
+      .tab-panel.active {
+        display: block;
+      }
+      .tab-panel .stage-grid {
+        grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      }
+      .view-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 850;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #8a5260;
+      }
+      .view-label:before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--red);
+      }
+      .result-block {
+        border-top: 1px solid var(--line);
+        margin-top: 25px;
+        padding-top: 23px;
+      }
+      .result-block:first-of-type {
+        border: 0;
+        padding-top: 0;
+        margin-top: 0;
+      }
+      footer {
+        text-align: center;
+        color: #8791a4;
+        font-size: 12px;
+        padding: 12px 20px 30px;
+      }
+      #lightbox {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: #0b1020ed;
+        z-index: 99;
+        align-items: center;
+        justify-content: center;
+        padding: 25px;
+      }
+      #lightbox.open {
+        display: flex;
+      }
+      #lightbox img {
+        max-width: 95vw;
+        max-height: 88vh;
+        object-fit: contain;
+      }
+      #lightbox button {
+        position: absolute;
+        top: 18px;
+        right: 20px;
+        background: #ffffff22;
+        color: white;
+        border: 0;
+        border-radius: 9px;
+        padding: 10px 15px;
+        cursor: pointer;
+      }
+      @media (max-width: 650px) {
+        .hero {
+          padding: 25px 18px 34px;
+        }
+        main {
+          padding: 18px 12px 45px;
+        }
+        .card {
+          padding: 17px;
+          border-radius: 15px;
+        }
+        .section-head {
+          display: block;
+        }
+        .stage-grid,
+        .tab-panel .stage-grid {
+          grid-template-columns: 1fr;
+        }
+        .actions .btn {
+          width: 100%;
+        }
+      }
 
-<footer>Tugas Pengolahan Citra &middot; Dataset: BCCD (Blood Cell Count and Detection)</footer>
-</body>
+      :root {
+        scroll-behavior: smooth;
+        scroll-padding-top: 86px;
+      }
+      .site-nav {
+        height: 76px;
+        background: #fff;
+        border-bottom: 1px solid #e9edf3;
+        position: sticky;
+        top: 0;
+        z-index: 50;
+      }
+      .nav-inner {
+        height: 100%;
+        max-width: 1180px;
+        margin: auto;
+        padding: 0 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--ink);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 850;
+        letter-spacing: 0.02em;
+        line-height: 1.1;
+      }
+      .nav-brand small {
+        display: block;
+        color: #9099a9;
+        font-size: 8px;
+        letter-spacing: 0.16em;
+        margin-top: 5px;
+        font-weight: 800;
+      }
+      .nav-logo {
+        width: 39px;
+        height: 39px;
+        border-radius: 12px;
+        background: var(--soft);
+        display: grid;
+        place-items: center;
+        font-size: 21px;
+      }
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 29px;
+        margin-left: auto;
+        margin-right: 14px;
+      }
+      .nav-link {
+        color: #68738a;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+        transition: 0.2s;
+      }
+      .nav-link:hover,
+      .nav-link.active {
+        color: var(--red);
+      }
+      .nav-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 15px;
+        padding: 10px 15px;
+        border-radius: 9px;
+        background: var(--navy);
+        color: #fff;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 750;
+      }
+      .nav-cta span {
+        font-size: 16px;
+        color: #f2a9b8;
+      }
+      .nav-menu,
+      .mobile-links {
+        display: none;
+      }
+      .hero {
+        padding: 64px 22px 34px;
+        min-height: 510px;
+        position: relative;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse at 80% 42%, #743044 0, transparent 34%),
+          linear-gradient(115deg, #111b30 0%, #281b2b 58%, #542337 100%);
+      }
+      .hero:after {
+        content: "";
+        position: absolute;
+        width: 460px;
+        height: 460px;
+        border: 1px solid #ffffff12;
+        border-radius: 50%;
+        right: -120px;
+        top: -170px;
+        box-shadow:
+          0 0 0 50px #ffffff08,
+          0 0 0 100px #ffffff05;
+        pointer-events: none;
+      }
+      .hero-inner {
+        position: relative;
+        z-index: 1;
+      }
+      .hero-layout {
+        display: grid;
+        grid-template-columns: 1.08fr 0.92fr;
+        align-items: center;
+        gap: 55px;
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .hero-copy {
+        padding: 10px 0 20px;
+      }
+      .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: #f0b7c3;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+      }
+      .eyebrow-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f18ca1;
+        box-shadow: 0 0 0 5px #f18ca122;
+      }
+      .hero h1 {
+        font-size: clamp(34px, 4.4vw, 55px);
+        line-height: 1.08;
+        margin: 23px 0 18px;
+        letter-spacing: -0.045em;
+      }
+      .hero h1 em {
+        font-style: normal;
+        color: #f2a7b7;
+      }
+      .hero p {
+        color: #d9d7df;
+        max-width: 520px;
+        font-size: 15px;
+        line-height: 1.8;
+      }
+      .hero-actions {
+        display: flex;
+        align-items: center;
+        gap: 23px;
+        margin-top: 27px;
+      }
+      .hero-primary {
+        background: #e35c78;
+        color: #fff;
+        padding: 13px 18px;
+        box-shadow: 0 8px 24px #e35c7830;
+      }
+      .hero-primary:hover {
+        background: #ef718b;
+      }
+      .hero-secondary {
+        color: #fff;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 750;
+      }
+      .hero-secondary span {
+        color: #f1a5b5;
+        margin-left: 7px;
+      }
+      .hero-note {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        color: #c8c5d0;
+        font-size: 11px;
+        margin-top: 32px;
+      }
+      .note-icon {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: #ffffff20;
+        color: #f2a7b7;
+        font-size: 11px;
+      }
+      .hero-visual {
+        background: #ffffff0c;
+        border: 1px solid #ffffff26;
+        border-radius: 20px;
+        padding: 16px;
+        box-shadow: 0 25px 70px #080b17a1;
+        backdrop-filter: blur(8px);
+        transform: rotate(1deg);
+      }
+      .visual-top,
+      .visual-bottom {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: #d9d6df;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+      .visual-top i {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        background: #7ee0b1;
+        border-radius: 50%;
+        margin-right: 7px;
+      }
+      .visual-live {
+        color: #9ee1c2;
+      }
+      .cell-preview {
+        height: 245px;
+        margin: 14px 0;
+        background: radial-gradient(circle at 50% 50%, #7c5360, #302a3d 72%);
+        border: 1px solid #ffffff16;
+        border-radius: 12px;
+        position: relative;
+        overflow: hidden;
+      }
+      .cell {
+        position: absolute;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 36% 34%,
+          #f5c0c1 0,
+          #c86d7b 38%,
+          #873b53 65%,
+          #49283f 100%
+        );
+        box-shadow:
+          inset -8px -9px 16px #321d37aa,
+          0 4px 13px #0c102555;
+      }
+      .c1 {
+        width: 67px;
+        height: 67px;
+        left: 12%;
+        top: 15%;
+      }
+      .c2 {
+        width: 80px;
+        height: 80px;
+        left: 45%;
+        top: 10%;
+      }
+      .c3 {
+        width: 58px;
+        height: 58px;
+        left: 72%;
+        top: 58%;
+      }
+      .c4 {
+        width: 75px;
+        height: 75px;
+        left: 22%;
+        top: 62%;
+      }
+      .c5 {
+        width: 48px;
+        height: 48px;
+        left: 57%;
+        top: 57%;
+      }
+      .scan-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 48%;
+        height: 1px;
+        background: #ffb3c4;
+        box-shadow: 0 0 12px 2px #ff8da8aa;
+        opacity: 0.8;
+      }
+      .target {
+        position: absolute;
+        border: 1.5px solid #8ff0c0;
+        border-radius: 50%;
+        width: 88px;
+        height: 88px;
+        box-shadow: 0 0 0 4px #8ff0c022;
+      }
+      .target-one {
+        left: 42%;
+        top: 7%;
+      }
+      .target-two {
+        left: 18%;
+        top: 59%;
+        width: 82px;
+        height: 82px;
+      }
+      .visual-bottom {
+        border-top: 1px solid #ffffff20;
+        padding: 13px 2px 2px;
+        letter-spacing: 0;
+      }
+      .visual-bottom small {
+        display: block;
+        color: #aaa9b8;
+        font-size: 8px;
+        letter-spacing: 0.12em;
+        margin-bottom: 4px;
+      }
+      .visual-bottom b {
+        font-size: 12px;
+        color: #fff;
+        letter-spacing: 0.02em;
+      }
+      .visual-stat {
+        text-align: right;
+      }
+      .visual-stat b {
+        font-size: 20px;
+        color: #f2a7b7;
+      }
+      .visual-stat b span {
+        font-size: 9px;
+        color: #d4cbd4;
+      }
+      .hero-scroll {
+        max-width: 1100px;
+        margin: 36px auto 0;
+        color: #a9a5b2;
+        font-size: 8px;
+        letter-spacing: 0.18em;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .hero-scroll span {
+        height: 1px;
+        width: 28px;
+        background: #d9879b;
+      }
+      main {
+        padding-top: 35px;
+      }
+      .feature-section {
+        max-width: 1140px;
+        margin: 0 auto 35px;
+        padding: 10px 0 25px;
+        display: grid;
+        grid-template-columns: 0.75fr 1.25fr;
+        gap: 45px;
+        align-items: center;
+      }
+      .feature-intro h2,
+      .about-strip h2 {
+        font-size: 26px;
+        line-height: 1.15;
+        letter-spacing: -0.035em;
+        margin: 12px 0;
+      }
+      .feature-intro .sub {
+        max-width: 320px;
+        line-height: 1.7;
+      }
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .feature-card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 17px 15px;
+        min-height: 175px;
+        box-shadow: 0 8px 24px #1b294006;
+      }
+      .feature-icon {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        background: var(--soft);
+        color: var(--red);
+        border-radius: 10px;
+        font-size: 19px;
+        margin-bottom: 15px;
+      }
+      .feature-card b {
+        font-size: 13px;
+      }
+      .feature-card p {
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--muted);
+        min-height: 48px;
+        margin: 7px 0 12px;
+      }
+      .feature-card small {
+        font-size: 8px;
+        letter-spacing: 0.13em;
+        color: #a0a8b6;
+        font-weight: 850;
+      }
+      .analysis-card {
+        scroll-margin-top: 95px;
+      }
+      .about-strip {
+        max-width: 1140px;
+        margin: 25px auto 10px;
+        padding: 28px 30px;
+        border-radius: 18px;
+        background: #fff;
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 35px;
+      }
+      .about-strip > div {
+        max-width: 690px;
+      }
+      .about-strip p {
+        font-size: 13px;
+        line-height: 1.7;
+        color: var(--muted);
+        margin: 0;
+      }
+      .about-link {
+        white-space: nowrap;
+        text-decoration: none;
+        color: var(--red);
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .about-link span {
+        margin-left: 8px;
+      }
+      footer {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+      footer b {
+        color: #566176;
+      }
+      footer span {
+        width: 100%;
+        font-size: 10px;
+      }
+      @media (max-width: 850px) {
+        .hero-layout {
+          gap: 28px;
+        }
+        .feature-section {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+        .feature-intro h2 br {
+          display: none;
+        }
+      }
+      @media (max-width: 650px) {
+        .site-nav {
+          height: 66px;
+        }
+        .nav-inner {
+          padding: 0 14px;
+        }
+        .nav-links,
+        .nav-cta {
+          display: none;
+        }
+        .nav-menu {
+          display: block;
+          border: 1px solid var(--line);
+          background: #fff;
+          border-radius: 9px;
+          padding: 8px 11px;
+          color: var(--ink);
+          font-size: 17px;
+        }
+        .mobile-links {
+          position: absolute;
+          top: 65px;
+          left: 0;
+          right: 0;
+          background: #fff;
+          border-bottom: 1px solid var(--line);
+          padding: 8px 18px 15px;
+          box-shadow: 0 12px 20px #111b3012;
+        }
+        .mobile-links.open {
+          display: grid;
+        }
+        .mobile-links a {
+          padding: 10px 2px;
+          color: #536078;
+          text-decoration: none;
+          font-size: 13px;
+          font-weight: 700;
+        }
+        .hero {
+          padding: 42px 18px 25px;
+          min-height: auto;
+        }
+        .hero-layout {
+          grid-template-columns: 1fr;
+          gap: 28px;
+        }
+        .hero h1 {
+          font-size: 39px;
+        }
+        .hero-visual {
+          max-width: 440px;
+          width: 100%;
+          margin: 0 auto;
+        }
+        .cell-preview {
+          height: 205px;
+        }
+        .hero-scroll {
+          margin-top: 28px;
+        }
+        .feature-section {
+          padding: 10px 0 20px;
+        }
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+        .feature-card {
+          min-height: 0;
+        }
+        .feature-card p {
+          min-height: 0;
+        }
+        .about-strip {
+          padding: 22px;
+          display: block;
+        }
+        .about-link {
+          display: inline-block;
+          margin-top: 17px;
+        }
+        main {
+          padding: 22px 12px 45px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="site-nav">
+      <div class="nav-inner">
+        <a class="nav-brand" href="#beranda"
+          ><span class="nav-logo">🩸</span
+          ><span>RBC <b>LAB</b><small>MICROSCOPY ANALYSIS</small></span></a
+        >
+        <div class="nav-links">
+          <a href="#beranda" class="nav-link active">Beranda</a>
+          <a href="#fitur" class="nav-link">Fitur</a>
+          <a href="#analisis" class="nav-link">Analisis</a>
+          <a href="#tentang" class="nav-link">Tentang</a>
+        </div>
+        <a class="nav-cta" href="#analisis">Mulai Analisis <span>↗</span></a>
+        <button
+          class="nav-menu"
+          type="button"
+          aria-label="Buka menu"
+          aria-expanded="false"
+        >
+          ☰
+        </button>
+      </div>
+      <div class="mobile-links">
+        <a href="#beranda">Beranda</a><a href="#fitur">Fitur</a
+        ><a href="#analisis">Analisis</a><a href="#tentang">Tentang</a>
+      </div>
+    </nav>
+    <header class="hero" id="beranda">
+      <div class="hero-inner">
+        <div class="hero-layout">
+          <div class="hero-copy">
+            <div class="eyebrow">
+              <span class="eyebrow-dot"></span> MICROSCOPE IMAGE ANALYSIS
+              PLATFORM
+            </div>
+            <h1>Melihat lebih jelas.<br /><em>Menghitung lebih cerdas.</em></h1>
+            <p>
+              Platform analisis citra mikroskopis untuk membantu mendeteksi dan
+              menghitung sel darah merah melalui pemrosesan citra yang
+              terstruktur.
+            </p>
+            <div class="hero-actions">
+              <a class="btn hero-primary" href="#analisis"
+                >Mulai Analisis <span>→</span></a
+              ><a class="hero-secondary" href="#fitur"
+                >Jelajahi Fitur <span>↓</span></a
+              >
+            </div>
+            <div class="hero-note">
+              <span class="note-icon">✓</span> Pipeline terstruktur · Batch
+              processing · Ekspor data
+            </div>
+          </div>
+          <div
+            class="hero-visual"
+            aria-label="Ilustrasi analisis citra mikroskopis"
+          >
+            <div class="visual-top">
+              <span><i></i> ANALYSIS PREVIEW</span
+              ><span class="visual-live">● READY</span>
+            </div>
+            <div class="cell-preview">
+              <div class="cell c1"></div>
+              <div class="cell c2"></div>
+              <div class="cell c3"></div>
+              <div class="cell c4"></div>
+              <div class="cell c5"></div>
+              <div class="scan-line"></div>
+              <div class="target target-one"></div>
+              <div class="target target-two"></div>
+            </div>
+            <div class="visual-bottom">
+              <div><small>IMAGE PROCESSING</small><b>Otsu + Morphology</b></div>
+              <div class="visual-stat">
+                <small>WORKFLOW</small><b>05 <span>STAGES</span></b>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hero-scroll"><span></span> SCROLL TO EXPLORE</div>
+      </div>
+    </header>
+    <main>
+      {% if error %}
+      <div class="error">{{ error }}</div>
+      {% endif %}
+      <section class="feature-section" id="fitur">
+        <div class="feature-intro">
+          <div class="view-label">WORKSPACE FEATURES</div>
+          <h2>Semua proses dalam<br />satu alur kerja.</h2>
+          <p class="sub">
+            Dari unggah gambar hingga ringkasan hasil, setiap tahapan dirancang
+            agar mudah ditinjau.
+          </p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <span class="feature-icon">▧</span><b>Batch Upload</b>
+            <p>Unggah dan analisis beberapa citra mikroskopis sekaligus.</p>
+            <small>01 / INPUT</small>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">⌁</span><b>Image Processing</b>
+            <p>Telusuri tahapan preprocessing, Otsu, dan morfologi.</p>
+            <small>02 / PROCESS</small>
+          </article>
+          <article class="feature-card">
+            <span class="feature-icon">▤</span><b>Data & Export</b>
+            <p>Tinjau ringkasan hasil dan unduh data dalam format CSV.</p>
+            <small>03 / OUTPUT</small>
+          </article>
+        </div>
+      </section>
+      <form
+        class="card analysis-card"
+        id="analisis"
+        method="post"
+        enctype="multipart/form-data"
+      >
+        <div class="section-head">
+          <div>
+            <h2>Unggah gambar untuk dianalisis</h2>
+            <p class="sub">
+              Pilih satu atau beberapa citra sekaligus. Format JPG, JPEG, atau
+              PNG.
+            </p>
+          </div>
+        </div>
+        <div class="upload">
+          <div style="font-size: 30px">☁️</div>
+          <strong>Pilih gambar mikroskopis</strong
+          ><small>Batch processing · Maksimal 30 gambar · Total 80 MB</small>
+          <input
+            id="images"
+            type="file"
+            name="images"
+            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+            multiple
+            required
+          />
+          <div id="file-count" class="sub" style="margin-top: 8px">
+            Belum ada file dipilih
+          </div>
+        </div>
+        <details>
+          <summary>Pengaturan parameter analisis</summary>
+          <div class="grid">
+            <div>
+              <label for="channel">Sumber grayscale</label
+              ><select id="channel" name="channel">
+                <option
+                  value="green"
+                  {%
+                  if
+                  form.channel=""
+                  ="green"
+                  %}selected{%
+                  endif
+                  %}
+                >
+                  Channel hijau
+                </option>
+                <option
+                  value="gray"
+                  {%
+                  if
+                  form.channel=""
+                  ="gray"
+                  %}selected{%
+                  endif
+                  %}
+                >
+                  Grayscale standar
+                </option>
+              </select>
+            </div>
+            <div>
+              <label for="blur_ksize">Kernel Gaussian blur</label
+              ><input
+                id="blur_ksize"
+                type="number"
+                name="blur_ksize"
+                min="1"
+                max="21"
+                step="2"
+                value="{{ form.blur_ksize }}"
+              />
+            </div>
+            <div>
+              <label for="morph_ksize">Kernel morfologi</label
+              ><input
+                id="morph_ksize"
+                type="number"
+                name="morph_ksize"
+                min="1"
+                max="21"
+                step="2"
+                value="{{ form.morph_ksize }}"
+              />
+            </div>
+            <div>
+              <label for="min_area">Luas minimum objek (px)</label
+              ><input
+                id="min_area"
+                type="number"
+                name="min_area"
+                min="10"
+                max="5000"
+                value="{{ form.min_area }}"
+              />
+            </div>
+            <div>
+              <label for="dist_ratio">Rasio distance transform</label
+              ><input
+                id="dist_ratio"
+                type="number"
+                name="dist_ratio"
+                min="0.1"
+                max="0.9"
+                step="0.05"
+                value="{{ form.dist_ratio }}"
+              />
+            </div>
+            <div>
+              <label for="wbc_sat">Saturasi minimum inti WBC</label
+              ><input
+                id="wbc_sat"
+                type="number"
+                name="wbc_sat"
+                min="10"
+                max="200"
+                value="{{ form.wbc_sat }}"
+              />
+            </div>
+          </div>
+          <div class="checks">
+            <label class="check"
+              ><input
+                type="checkbox"
+                name="use_clahe"
+                {%
+                if
+                form.use_clahe
+                %}checked{%
+                endif
+                %}
+              />
+              Aktifkan CLAHE</label
+            >
+            <label class="check"
+              ><input
+                type="checkbox"
+                name="use_watershed"
+                {%
+                if
+                form.use_watershed
+                %}checked{%
+                endif
+                %}
+              />
+              Pisahkan sel menempel (watershed)</label
+            >
+            <label class="check"
+              ><input
+                type="checkbox"
+                name="remove_wbc"
+                {%
+                if
+                form.remove_wbc
+                %}checked{%
+                endif
+                %}
+              />
+              Keluarkan WBC dari hitungan RBC</label
+            >
+          </div>
+        </details>
+        <div class="actions">
+          <button class="btn primary" type="submit">
+            ▶ &nbsp;Proses semua gambar</button
+          ><span class="sub"
+            >Parameter yang sama diterapkan ke seluruh gambar.</span
+          >
+        </div>
+      </form>
+      {% if result %}
+      <section class="card" id="hasil">
+        <div class="result-top">
+          <div>
+            <div class="view-label">Ringkasan analisis</div>
+            <h2 style="margin-top: 7px">
+              Hasil pemrosesan {{ result|length }} gambar
+            </h2>
+            <div class="timestamp">Selesai diproses · {{ processed_at }}</div>
+          </div>
+          <a class="btn primary" href="{{ export_url }}"
+            >↓ &nbsp;Download data CSV</a
+          >
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <b>{{ result|length }}</b><span>Gambar berhasil dianalisis</span>
+          </div>
+          <div class="stat">
+            <b>{{ result|sum(attribute='count') }}</b
+            ><span>Total RBC terdeteksi</span>
+          </div>
+          <div class="stat">
+            <b
+              >{{ (result|sum(attribute='count') / (result|length))|round(1)
+              }}</b
+            ><span>Rata-rata RBC per gambar</span>
+          </div>
+          <div class="stat">
+            <b>{{ result|sum(attribute='wbc_count') }}</b
+            ><span>Total WBC terdeteksi</span>
+          </div>
+        </div>
+        <div class="result-block">
+          <div class="section-head">
+            <div>
+              <h2>Tabel data objek</h2>
+              <p class="sub">
+                Ringkasan hasil setiap gambar yang berhasil diproses.
+              </p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No.</th>
+                  <th>Nama file</th>
+                  <th>Jumlah RBC</th>
+                  <th>Jumlah WBC</th>
+                  <th>Ambang Otsu</th>
+                  <th>Median luas (px)</th>
+                  <th>Objek diabaikan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in result %}
+                <tr>
+                  <td>{{ loop.index }}</td>
+                  <td><strong>{{ item.filename }}</strong></td>
+                  <td><span class="count-pill">{{ item.count }}</span></td>
+                  <td>{{ item.wbc_count }}</td>
+                  <td>{{ item.otsu_threshold }}</td>
+                  <td>{{ item.median_area }}</td>
+                  <td>{{ item.ignored_small + item.ignored_big }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+      {% for item in result %}
+      <section class="card">
+        <div class="result-top">
+          <div>
+            <div class="view-label">
+              Gambar {{ loop.index }} dari {{ result|length }}
+            </div>
+            <h2 style="margin-top: 6px">{{ item.filename }}</h2>
+          </div>
+          <div class="count-pill">{{ item.count }} RBC terdeteksi</div>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <b>{{ item.count }}</b><span>RBC terdeteksi</span>
+          </div>
+          <div class="stat">
+            <b>{{ item.otsu_threshold }}</b><span>Ambang Otsu</span>
+          </div>
+          <div class="stat">
+            <b>{{ item.median_area }}</b><span>Median luas sel (px)</span>
+          </div>
+          <div class="stat">
+            <b>{{ item.wbc_count }}</b
+            ><span>WBC (tidak dihitung sebagai RBC)</span>
+          </div>
+          <div class="stat">
+            <b>{{ item.ignored_small }}</b><span>Objek kecil diabaikan</span>
+          </div>
+          <div class="stat">
+            <b>{{ item.ignored_big }}</b><span>Objek besar diabaikan</span>
+          </div>
+        </div>
+        <div class="result-block">
+          <div class="section-head">
+            <div>
+              <h2>Tahapan pengolahan citra</h2>
+              <p class="sub">
+                Semua tahapan ditampilkan berurutan, dari citra asli hingga
+                hasil deteksi.
+              </p>
+            </div>
+            <div class="view-label">Tampilan lengkap</div>
+          </div>
+          <div class="stage-grid">
+            {% for s in item.stages %}
+            <article class="stage">
+              <figure>
+                <img src="{{ s.uri }}" alt="{{ s.title }}" loading="lazy" />
+                <figcaption><b>{{ s.title }}</b>{{ s.desc }}</figcaption>
+              </figure>
+              <div class="stage-tools">
+                <a href="{{ s.uri }}" download="gambar-{{ loop.index }}.png"
+                  >↓ Download gambar</a
+                >
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="result-block">
+          <div class="section-head">
+            <div>
+              <h2>Jelajahi tahapan dengan tab</h2>
+              <p class="sub">
+                Pilih kategori untuk fokus pada bagian pipeline tertentu.
+              </p>
+            </div>
+            <div class="view-label">Tampilan tab</div>
+          </div>
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab active" data-tab="original">
+              1 · Original
+            </button>
+            <button type="button" class="tab" data-tab="preprocessing">
+              2 · Preprocessing
+            </button>
+            <button type="button" class="tab" data-tab="otsu">
+              3 · Otsu Binary
+            </button>
+            <button type="button" class="tab" data-tab="morfologi">
+              4 · Morfologi
+            </button>
+            <button type="button" class="tab" data-tab="final">
+              5 · Deteksi Final
+            </button>
+          </div>
+          {% for key, label in
+          [('original','Original'),('preprocessing','Preprocessing'),('otsu','Otsu
+          Binary'),('morfologi','Morfologi'),('final','Deteksi Final')] %}
+          <div
+            class="tab-panel {% if key == 'original' %}active{% endif %}"
+            data-panel="{{ key }}"
+          >
+            <div class="stage-grid">
+              {% for s in item.stages %} {% set t = s.title|lower %} {% if (key
+              == 'original' and ('citra asli' in t)) or (key == 'preprocessing'
+              and ('grayscale' in t or 'smoothing' in t or 'clahe' in t)) or
+              (key == 'otsu' and ('thresholding otsu' in t)) or (key ==
+              'morfologi' and ('morfologi' in t or 'wbc' in t or 'distance
+              transform' in t or 'watershed' in t)) or (key == 'final' and
+              ('hasil deteksi' in t)) %}
+              <article class="stage">
+                <figure>
+                  <img src="{{ s.uri }}" alt="{{ s.title }}" loading="lazy" />
+                  <figcaption><b>{{ s.title }}</b>{{ s.desc }}</figcaption>
+                </figure>
+                <div class="stage-tools">
+                  <a
+                    href="{{ s.uri }}"
+                    download="rbc-{{ key }}-{{ loop.index }}.png"
+                    >↓ Download gambar</a
+                  >
+                </div>
+              </article>
+              {% endif %} {% endfor %} {% if key == 'final' %}
+              <article class="stage">
+                <div style="padding: 18px">
+                  <div class="view-label">Data objek</div>
+                  <div
+                    style="
+                      font-size: 35px;
+                      font-weight: 850;
+                      color: var(--red);
+                      margin-top: 8px;
+                    "
+                  >
+                    {{ item.count }}
+                  </div>
+                  <b>RBC berhasil dideteksi</b>
+                  <p class="sub" style="margin-top: 8px">
+                    Jumlah objek setelah proses segmentasi, pemisahan sel, dan
+                    penyaringan luas.
+                  </p>
+                  <hr
+                    style="
+                      border: 0;
+                      border-top: 1px solid var(--line);
+                      margin: 16px 0;
+                    "
+                  />
+                  <div class="sub">
+                    WBC dikecualikan: <b>{{ item.wbc_count }}</b><br />Objek
+                    kecil diabaikan: <b>{{ item.ignored_small }}</b><br />Objek
+                    besar diabaikan: <b>{{ item.ignored_big }}</b>
+                  </div>
+                </div>
+              </article>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %} {% endif %}
+      <section class="about-strip" id="tentang">
+        <div>
+          <div class="view-label">ABOUT RBC LAB</div>
+          <h2>Analisis citra yang lebih terarah.</h2>
+          <p>
+            RBC Lab membantu menyajikan tahapan pemrosesan citra dan hasil
+            deteksi dalam tampilan yang mudah dipahami. Hasil tetap perlu
+            ditinjau dan divalidasi oleh pengguna yang kompeten.
+          </p>
+        </div>
+        <a href="#analisis" class="about-link">Mulai sekarang <span>↗</span></a>
+      </section>
+    </main>
+    <footer>
+      <b>RBC LAB</b> · Microscopy Image Analysis
+      <span
+        >Hasil deteksi merupakan estimasi berbasis algoritma citra dan bukan
+        diagnosis medis.</span
+      >
+    </footer>
+    <div id="lightbox">
+      <button type="button" id="close-lightbox">Tutup ✕</button
+      ><img alt="Pratinjau gambar besar" />
+    </div>
+    <script>
+      const menuButton = document.querySelector(".nav-menu");
+      const mobileLinks = document.querySelector(".mobile-links");
+      if (menuButton && mobileLinks) {
+        menuButton.addEventListener("click", () => {
+          const opened = mobileLinks.classList.toggle("open");
+          menuButton.setAttribute("aria-expanded", String(opened));
+          menuButton.textContent = opened ? "✕" : "☰";
+        });
+        mobileLinks.querySelectorAll("a").forEach((a) =>
+          a.addEventListener("click", () => {
+            mobileLinks.classList.remove("open");
+            menuButton.setAttribute("aria-expanded", "false");
+            menuButton.textContent = "☰";
+          }),
+        );
+      }
+      document.querySelectorAll(".nav-links a").forEach((a) =>
+        a.addEventListener("click", () => {
+          document
+            .querySelectorAll(".nav-links a")
+            .forEach((x) => x.classList.remove("active"));
+          a.classList.add("active");
+        }),
+      );
+      const picker = document.getElementById("images");
+      if (picker)
+        picker.addEventListener("change", () => {
+          const n = picker.files.length;
+          document.getElementById("file-count").textContent = n
+            ? `${n} gambar dipilih · ${Array.from(picker.files)
+                .map((f) => f.name)
+                .join(", ")}`
+            : "Belum ada file dipilih";
+        });
+      document.querySelectorAll(".tabs").forEach((tabs) => {
+        tabs.addEventListener("click", (e) => {
+          const btn = e.target.closest(".tab");
+          if (!btn) return;
+          const root = tabs.parentElement;
+          tabs
+            .querySelectorAll(".tab")
+            .forEach((b) => b.classList.toggle("active", b === btn));
+          root
+            .querySelectorAll(".tab-panel")
+            .forEach((p) =>
+              p.classList.toggle("active", p.dataset.panel === btn.dataset.tab),
+            );
+        });
+      });
+      const lb = document.getElementById("lightbox"),
+        lbImg = lb.querySelector("img");
+      document.querySelectorAll(".stage img").forEach((img) =>
+        img.addEventListener("click", () => {
+          lbImg.src = img.src;
+          lb.classList.add("open");
+        }),
+      );
+      function closeLb() {
+        lb.classList.remove("open");
+        lbImg.src = "";
+      }
+      document
+        .getElementById("close-lightbox")
+        .addEventListener("click", closeLb);
+      lb.addEventListener("click", (e) => {
+        if (e.target === lb) closeLb();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeLb();
+      });
+    </script>
+  </body>
 </html>
