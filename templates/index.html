@@ -1188,32 +1188,11 @@
           <summary>Pengaturan parameter analisis</summary>
           <div class="grid">
             <div>
-              <label for="channel">Sumber grayscale</label
-              ><select id="channel" name="channel">
-                <option
-                  value="green"
-                  {%
-                  if
-                  form.channel=""
-                  ="green"
-                  %}selected{%
-                  endif
-                  %}
-                >
-                  Channel hijau
-                </option>
-                <option
-                  value="gray"
-                  {%
-                  if
-                  form.channel=""
-                  ="gray"
-                  %}selected{%
-                  endif
-                  %}
-                >
-                  Grayscale standar
-                </option>
+              <label for="channel">Sumber grayscale</label>
+              <select id="channel" name="channel">
+                <option value="green" {% if form.channel == "green" %}selected{% endif %}>Channel hijau</option>
+
+                <option value="gray" {% if form.channel == "gray" %}selected{% endif %}>Grayscale standar</option>
               </select>
             </div>
             <div>
