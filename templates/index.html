@@ -1052,7 +1052,7 @@
           <a href="#analisis" class="nav-link">Analisis</a>
           <a href="#tentang" class="nav-link">Tentang</a>
         </div>
-        <a class="nav-cta" href="#analisis">Mulai Analisis <span>↗</span></a>
+        <a class="nav-cta" href="#analisis">Mulai Analisis</a>
         <button
           class="nav-menu"
           type="button"
@@ -1084,9 +1084,7 @@
             <div class="hero-actions">
               <a class="btn hero-primary" href="#analisis"
                 >Mulai Analisis <span>→</span></a
-              ><a class="hero-secondary" href="#fitur"
-                >Jelajahi Fitur <span>↓</span></a
-              >
+              ><a class="hero-secondary" href="#fitur">Jelajahi Fitur</a>
             </div>
             <div class="hero-note">
               <span class="note-icon">✓</span> Pipeline terstruktur · Batch
@@ -1190,9 +1188,31 @@
             <div>
               <label for="channel">Sumber grayscale</label>
               <select id="channel" name="channel">
-                <option value="green" {% if form.channel == "green" %}selected{% endif %}>Channel hijau</option>
+                <option
+                  value="green"
+                  {%
+                  if
+                  form.channel=""
+                  ="green"
+                  %}selected{%
+                  endif
+                  %}
+                >
+                  Channel hijau
+                </option>
 
-                <option value="gray" {% if form.channel == "gray" %}selected{% endif %}>Grayscale standar</option>
+                <option
+                  value="gray"
+                  {%
+                  if
+                  form.channel=""
+                  ="gray"
+                  %}selected{%
+                  endif
+                  %}
+                >
+                  Grayscale standar
+                </option>
               </select>
             </div>
             <div>
