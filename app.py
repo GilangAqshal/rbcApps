@@ -10,6 +10,8 @@ import rbc
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024
+# Muat ulang template otomatis saat file HTML diubah (tanpa restart server)
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 CSV_EXPORTS = {}
 
 def to_data_uri(img):

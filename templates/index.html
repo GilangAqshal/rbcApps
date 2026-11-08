@@ -1048,11 +1048,11 @@
         >
         <div class="nav-links">
           <a href="#beranda" class="nav-link active">Beranda</a>
-          <a href="#fitur" class="nav-link">Fitura</a>
+          <a href="#fitur" class="nav-link">Fitur</a>
           <a href="#analisis" class="nav-link">Analisis</a>
           <a href="#tentang" class="nav-link">Tentang</a>
         </div>
-        <a class="nav-cta" href="#analisis">Mulai Analisis</a>
+        <a class="nav-cta" href="#analisis"> Mulai Analisis </a>
         <button
           class="nav-menu"
           type="button"
@@ -1082,9 +1082,8 @@
               terstruktur.
             </p>
             <div class="hero-actions">
-              <a class="btn hero-primary" href="#analisis"
-                >Mulai Analisis <span>→</span></a
-              ><a class="hero-secondary" href="#fitur">Jelajahi Fitur</a>
+              <a class="btn hero-primary" href="#analisis">Mulai Analisis </a
+              ><a class="hero-secondary" href="#fitur"> Jelajahi Fitur </a>
             </div>
             <div class="hero-note">
               <span class="note-icon">✓</span> Pipeline terstruktur · Batch
@@ -1188,29 +1187,10 @@
             <div>
               <label for="channel">Sumber grayscale</label>
               <select id="channel" name="channel">
-                <option
-                  value="green"
-                  {%
-                  if
-                  form.channel=""
-                  ="green"
-                  %}selected{%
-                  endif
-                  %}
-                >
+                <option value="green" {{ 'selected' if form.channel == 'green' }}>
                   Channel hijau
                 </option>
-
-                <option
-                  value="gray"
-                  {%
-                  if
-                  form.channel=""
-                  ="gray"
-                  %}selected{%
-                  endif
-                  %}
-                >
+                <option value="gray" {{ 'selected' if form.channel == 'gray' }}>
                   Grayscale standar
                 </option>
               </select>
